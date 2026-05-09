@@ -98,11 +98,14 @@ export default function App() {
     }
   }, [])
 
+  const [debug, setDebug] = useState('')
+
   const handleMapClick = useCallback(
     (lat: number, lng: number) => {
+      setDebug(`click: ${lat.toFixed(4)},${lng.toFixed(4)} | graph:${graph ? graph.nodes.size : 'null'} | src:${sourceId ?? 'none'} | tgt:${targetId ?? 'none'}`)
       if (!graph || isRunning) return
       const nodeId = nearestNode(graph, lat, lng)
-      if (!nodeId) return
+      if (!nodeId) { setDebug(d => d + ' | node:NOT_FOUND'); return }
 
       if (!sourceId) {
         setSourceId(nodeId)
@@ -185,6 +188,12 @@ export default function App() {
       />
 
       <StatsPanel results={results} enabledAlgos={enabledAlgos} />
+
+      {debug && (
+        <div style={{ position: 'absolute', top: 0, right: 0, background: 'rgba(0,0,0,0.8)', color: '#0f0', padding: '4px 8px', fontSize: 11, fontFamily: 'monospace', zIndex: 999 }}>
+          {debug}
+        </div>
+      )}
     </div>
   )
 }
