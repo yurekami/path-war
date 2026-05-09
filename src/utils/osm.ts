@@ -1,7 +1,14 @@
 import { buildGraphFromOSM } from '../algorithms/graph'
 import type { Graph } from '../types'
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
+const STATIC_DATA: Record<string, string> = {
+  '40.7,-74.018,40.735,-73.972': '/data/lower-manhattan.json',
+}
+
+const OVERPASS_URLS = [
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+]
 const STORAGE_KEY = 'sssp-graph-v1'
 
 export interface BBox {
@@ -36,8 +43,6 @@ export async function fetchRoadGraph(
     return graph
   }
 
-  onProgress?.('Fetching road network from OpenStreetMap...')
-
   const query = `
 [out:json][timeout:30];
 way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)$"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
@@ -45,13 +50,33 @@ way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassif
 out body;
 `
 
-  const resp = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    body: `data=${encodeURIComponent(query)}`,
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  })
+  let resp: Response | null = null
+  for (const url of OVERPASS_URLS) {
+    onProgress?.(`Fetching road network from ${new URL(url).hostname}...`)
+    try {
+      resp = await fetch(url, {
+        method: 'POST',
+        body: `data=${encodeURIComponent(query)}`,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      })
+      if (resp.ok) break
+    } catch {
+      continue
+    }
+  }
 
-  if (!resp.ok) throw new Error(`Overpass API error: ${resp.status}`)
+  if (!resp || !resp.ok) {
+    onProgress?.('API failed, loading bundled data...')
+    const staticFile = STATIC_DATA[`${bbox.south},${bbox.west},${bbox.north},${bbox.east}`]
+    if (staticFile) {
+      const staticResp = await fetch(staticFile)
+      const staticData = await staticResp.json()
+      const graph = buildGraphFromOSM(staticData.elements)
+      onProgress?.(`Loaded ${graph.nodes.size} nodes from bundled data`)
+      return graph
+    }
+    throw new Error('All Overpass API mirrors failed and no bundled data available')
+  }
 
   onProgress?.('Parsing response...')
   const data = await resp.json()
